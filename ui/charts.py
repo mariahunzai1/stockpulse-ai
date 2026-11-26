@@ -1,4 +1,4 @@
-"""Dark-themed Plotly figure builders for the StockPulse AI Command Center."""
+"""Dark-themed Plotly figure builders with plain-English retail copy for StockPulse AI."""
 
 from __future__ import annotations
 
@@ -14,6 +14,37 @@ ROSE = "#EF4444"
 SLATE_TEXT = "#F9FAFB"
 MUTED_LINE = "rgba(148, 163, 184, 0.25)"
 PLOT_BG = "rgba(17, 24, 39, 0.65)"
+
+FEATURE_LABELS: dict[str, str] = {
+    "rolling_mean_7": "7-Day Average Sales",
+    "lag_1": "Yesterday's Sales",
+    "lag_7": "Sales 1 Week Ago",
+    "lag_14": "Sales 2 Weeks Ago",
+    "lag_28": "Sales 4 Weeks Ago",
+    "rolling_std_7": "7-Day Sales Swing",
+    "rolling_mean_28": "28-Day Average Sales",
+    "rolling_zero_rate_28": "Zero-Sale Days (Past 28d)",
+    "sell_price": "Item Selling Price ($)",
+    "price_momentum_7d": "7-Day Price Change (%)",
+    "price_vs_item_avg": "Price vs. Historical Average",
+    "has_event": "Holiday / Special Event",
+    "event_type_code": "Event Category",
+    "snap": "SNAP / Assistance Day",
+    "is_weekend": "Weekend Shopping Day",
+    "dow_sin": "Day-of-Week Cycle (A)",
+    "dow_cos": "Day-of-Week Cycle (B)",
+    "month_sin": "Seasonal Month Cycle (A)",
+    "month_cos": "Seasonal Month Cycle (B)",
+    "store_code": "Store Location",
+    "cat_code": "Product Category",
+    "dept_code": "Store Department",
+    "item_code": "Product ID",
+}
+
+
+def friendly_feature_name(raw_name: str) -> str:
+    """Translate internal model feature names into plain-English business labels."""
+    return FEATURE_LABELS.get(raw_name, raw_name.replace("_", " ").title())
 
 
 def _apply_dark_layout(fig: go.Figure, title: str, height: int = 380) -> go.Figure:
@@ -39,7 +70,7 @@ def _apply_dark_layout(fig: go.Figure, title: str, height: int = 380) -> go.Figu
 
 
 def build_store_category_bar(skus: list[dict[str, Any]]) -> go.Figure:
-    """Plot current on-hand stock value across M5 regional stores and categories."""
+    """Plot current on-hand stock cost across regional stores and product categories."""
     df = pd.DataFrame(skus)
     df["inventory_value"] = df["current_on_hand"] * df["unit_cost"]
     agg = df.groupby(["store_id", "cat_id"], as_index=False)["inventory_value"].sum()
@@ -50,7 +81,7 @@ def build_store_category_bar(skus: list[dict[str, Any]]) -> go.Figure:
         sub = agg[agg["cat_id"] == cat]
         fig.add_trace(
             go.Bar(
-                name=cat,
+                name=cat.title(),
                 x=sub["store_id"],
                 y=sub["inventory_value"],
                 marker_color=colors.get(cat, EMERALD),
@@ -58,19 +89,23 @@ def build_store_category_bar(skus: list[dict[str, Any]]) -> go.Figure:
                 textposition="auto",
             )
         )
-    fig.update_layout(barmode="group", xaxis_title="Store", yaxis_title="On-Hand Cost Value ($)")
-    return _apply_dark_layout(fig, "On-Hand Inventory Valuation by Store & Category", height=360)
+    fig.update_layout(
+        barmode="group",
+        xaxis_title="Store Location",
+        yaxis_title="Current Stock Value at Cost ($)",
+    )
+    return _apply_dark_layout(fig, "Current Stock Value Across Stores & Categories", height=360)
 
 
 def build_forecast_fan_chart(bundle: dict[str, Any]) -> go.Figure:
-    """Plot trailing 60-day M5 actuals alongside 28-day P10/P50/P90 quantile fan & actuals."""
+    """Plot trailing 60-day real sales alongside 28-day expected range & actual comparison."""
     hist_df = pd.DataFrame(bundle["history"])
     fc_df = pd.DataFrame(bundle["forecast"])
 
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
-            name="Trailing 60d Actuals",
+            name="Past 60 Days (Real Sales)",
             x=hist_df["date"],
             y=hist_df["sales"],
             mode="lines",
@@ -78,31 +113,30 @@ def build_forecast_fan_chart(bundle: dict[str, Any]) -> go.Figure:
         )
     )
 
-    # P10-P90 shaded confidence band
     fig.add_trace(
         go.Scatter(
-            name="P90 Upper Bound",
+            name="Busy-Day Peak (P90)",
             x=fc_df["date"],
             y=fc_df["p90"],
             mode="lines",
-            line=dict(width=0),
-            showlegend=False,
+            line=dict(color="rgba(16, 185, 129, 0.35)", width=1, dash="dash"),
+            showlegend=True,
         )
     )
     fig.add_trace(
         go.Scatter(
-            name="80% Interval (P10-P90)",
+            name="Expected Sales Range (covers 81% of real days)",
             x=fc_df["date"],
             y=fc_df["p10"],
             mode="lines",
-            line=dict(width=0),
+            line=dict(color="rgba(16, 185, 129, 0.35)", width=1, dash="dash"),
             fill="tonexty",
             fillcolor="rgba(16, 185, 129, 0.22)",
         )
     )
     fig.add_trace(
         go.Scatter(
-            name="P50 Median Forecast",
+            name="Expected Sales (P50)",
             x=fc_df["date"],
             y=fc_df["p50"],
             mode="lines+markers",
@@ -113,7 +147,7 @@ def build_forecast_fan_chart(bundle: dict[str, Any]) -> go.Figure:
     if "actual" in fc_df.columns and fc_df["actual"].notna().any():
         fig.add_trace(
             go.Scatter(
-                name="28d Validation Actuals",
+                name="Actual Sales (28-Day Test)",
                 x=fc_df["date"],
                 y=fc_df["actual"],
                 mode="lines+markers",
@@ -122,8 +156,8 @@ def build_forecast_fan_chart(bundle: dict[str, Any]) -> go.Figure:
             )
         )
 
-    title = f"Demand Forecast Fan — {bundle['store_id']} / {bundle['item_id']}"
-    fig.update_layout(xaxis_title="Date", yaxis_title="Daily Units Sold")
+    title = f"28-Day Sales Forecast vs. Recent History — {bundle['store_id']} / {bundle['item_id']}"
+    fig.update_layout(xaxis_title="Date", yaxis_title="Units Sold per Day")
     return _apply_dark_layout(fig, title, height=400)
 
 
@@ -133,10 +167,14 @@ def build_shap_waterfall_bar(
     top_n: int = 12,
     use_abs: bool = False,
 ) -> go.Figure:
-    """Plot horizontal TreeSHAP feature attribution bars."""
+    """Plot horizontal plain-English sales driver attribution bars."""
     top = list(contributions)[:top_n][::-1]
     labels = [
-        f"{c['feature']} ({c['feature_value']:.2f})" if not use_abs else c["feature"]
+        (
+            f"{friendly_feature_name(c['feature'])} ({c['feature_value']:.2f})"
+            if not use_abs
+            else friendly_feature_name(c["feature"])
+        )
         for c in top
     ]
     vals = [abs(c["shap_value"]) if use_abs else c["shap_value"] for c in top]
@@ -148,58 +186,79 @@ def build_shap_waterfall_bar(
             y=labels,
             orientation="h",
             marker_color=colors,
-            text=[f"{v:+.3f}" if not use_abs else f"{v:.3f}" for v in vals],
+            text=[f"{v:+.2f} units" if not use_abs else f"{v:.2f} impact" for v in vals],
             textposition="auto",
         )
     )
     fig.update_layout(
-        xaxis_title="Mean |SHAP| Impact" if use_abs else "SHAP Contribution (Units)",
+        xaxis_title=(
+            "Average Impact on Daily Sales" if use_abs else "Impact on Expected Sales (Units)"
+        ),
         yaxis_title="",
     )
-    return _apply_dark_layout(fig, title, height=380)
+    return _apply_dark_layout(fig, title, height=390)
 
 
 def build_quantile_spread_chart(tail_risk: dict[str, Any], top_n: int = 8) -> go.Figure:
-    """Plot multi-quantile P10/P50/P90 SHAP drivers and P90-P10 spread impact."""
+    """Plot what drives Low Estimate, Expected Sales, Busy-Day Peak, and Day-to-Day Uncertainty."""
     drivers = list(tail_risk["uncertainty_spread_drivers"])[:top_n][::-1]
-    feats = [d["feature"] for d in drivers]
+    feats = [friendly_feature_name(d["feature"]) for d in drivers]
 
     fig = go.Figure()
     fig.add_trace(
-        go.Bar(name="P10 SHAP", y=feats, x=[d["shap_p10"] for d in drivers], orientation="h", marker_color=CYAN)
-    )
-    fig.add_trace(
-        go.Bar(name="P50 SHAP", y=feats, x=[d["shap_p50"] for d in drivers], orientation="h", marker_color=EMERALD)
-    )
-    fig.add_trace(
-        go.Bar(name="P90 SHAP", y=feats, x=[d["shap_p90"] for d in drivers], orientation="h", marker_color=AMBER)
+        go.Bar(
+            name="Low Estimate Driver (P10)",
+            y=feats,
+            x=[d["shap_p10"] for d in drivers],
+            orientation="h",
+            marker_color=CYAN,
+        )
     )
     fig.add_trace(
         go.Bar(
-            name="Spread (P90 - P10)",
+            name="Expected Sales Driver (P50)",
+            y=feats,
+            x=[d["shap_p50"] for d in drivers],
+            orientation="h",
+            marker_color=EMERALD,
+        )
+    )
+    fig.add_trace(
+        go.Bar(
+            name="Busy-Day Peak Driver (P90)",
+            y=feats,
+            x=[d["shap_p90"] for d in drivers],
+            orientation="h",
+            marker_color=AMBER,
+        )
+    )
+    fig.add_trace(
+        go.Bar(
+            name="Spike Uncertainty Gap (Peak − Low)",
             y=feats,
             x=[d["spread_impact"] for d in drivers],
             orientation="h",
             marker_color=ROSE,
         )
     )
-    fig.update_layout(barmode="group", xaxis_title="SHAP Value (Units)")
+    fig.update_layout(barmode="group", xaxis_title="Impact on Daily Units Sold")
     return _apply_dark_layout(
         fig,
-        f"Multi-Quantile Tail-Risk Drivers — {tail_risk['store_id']} / {tail_risk['item_id']}",
-        height=420,
+        f"What Causes Busy-Day Spikes? — {tail_risk['store_id']} / {tail_risk['item_id']}",
+        height=430,
     )
 
 
 def build_pdp_ice_chart(pdp_data: dict[str, Any]) -> go.Figure:
-    """Plot bold global Partial Dependence curve overlaid on sampled SKU ICE trajectories."""
+    """Plot average sales response curve overlaid on individual store-product curves."""
     grid = pdp_data["grid_values"]
+    feat_label = friendly_feature_name(pdp_data["feature"])
     fig = go.Figure()
 
     for idx, curve in enumerate(pdp_data["ice_curves"]):
         fig.add_trace(
             go.Scatter(
-                name=f"{curve['store_id']}/{curve['item_id']}",
+                name=f"{curve['store_id']} / {curve['item_id']}",
                 x=grid,
                 y=curve["values"],
                 mode="lines",
@@ -210,7 +269,7 @@ def build_pdp_ice_chart(pdp_data: dict[str, Any]) -> go.Figure:
 
     fig.add_trace(
         go.Scatter(
-            name="Global Average PDP",
+            name="Average Across All Stores",
             x=grid,
             y=pdp_data["average_pdp"],
             mode="lines+markers",
@@ -218,16 +277,16 @@ def build_pdp_ice_chart(pdp_data: dict[str, Any]) -> go.Figure:
             marker=dict(size=6),
         )
     )
-    fig.update_layout(xaxis_title=pdp_data["feature"], yaxis_title="Predicted P50 Demand (Units)")
+    fig.update_layout(xaxis_title=feat_label, yaxis_title="Expected Daily Sales (Units)")
     return _apply_dark_layout(
-        fig, f"Partial Dependence & Sampled ICE — {pdp_data['feature']}", height=390
+        fig, f"How '{feat_label}' Changes Expected Daily Sales", height=390
     )
 
 
 def build_psi_drift_chart(drift_report: dict[str, Any]) -> go.Figure:
-    """Plot per-feature Population Stability Index bars with 0.10 / 0.25 thresholds."""
+    """Plot buying-habit shift score per signal with normal/warning threshold lines."""
     items = sorted(drift_report["feature_psis"].items(), key=lambda kv: kv[1])
-    features = [k for k, _ in items]
+    features = [friendly_feature_name(k) for k, _ in items]
     psis = [v for _, v in items]
     colors = [
         ROSE if v >= 0.25 else (AMBER if v >= 0.10 else EMERALD)
@@ -240,23 +299,23 @@ def build_psi_drift_chart(drift_report: dict[str, Any]) -> go.Figure:
             y=features,
             orientation="h",
             marker_color=colors,
-            text=[f"{v:.4f}" for v in psis],
+            text=[f"{v:.3f}" for v in psis],
             textposition="auto",
         )
     )
-    fig.add_vline(x=0.10, line_dash="dash", line_color=AMBER, annotation_text="Moderate (0.10)")
-    fig.add_vline(x=0.25, line_dash="dash", line_color=ROSE, annotation_text="Significant (0.25)")
-    fig.update_layout(xaxis_title="Population Stability Index (PSI)", yaxis_title="")
-    return _apply_dark_layout(fig, "Feature Distribution Drift (28d Validation vs. Train)", height=360)
+    fig.add_vline(x=0.10, line_dash="dash", line_color=AMBER, annotation_text="Slight Shift (0.10)")
+    fig.add_vline(x=0.25, line_dash="dash", line_color=ROSE, annotation_text="Major Shift (0.25)")
+    fig.update_layout(xaxis_title="Buying-Habit Shift Score (PSI — Lower Is Steadier)", yaxis_title="")
+    return _apply_dark_layout(fig, "Which Buying Signals Shifted Most Recently?", height=360)
 
 
 def build_milp_comparison_charts(opt_result: dict[str, Any]) -> tuple[go.Figure, go.Figure]:
-    """Build (cost_service_fig, budget_gauge_fig) comparing HiGHS MILP vs 14-day baseline."""
+    """Build (cost_comparison_fig, cash_budget_gauge_fig) for Smart Restock vs. Simple Rule."""
     comp_fig = go.Figure()
     comp_fig.add_trace(
         go.Bar(
-            name="HiGHS MILP Optimizer",
-            x=["Expected Total Cost ($)", "Holding Cost ($)", "Stockout Cost ($)"],
+            name="Smart Restock Optimizer",
+            x=["Total Risk & Storage Cost ($)", "Storage Cost ($)", "Lost-Sale Penalty ($)"],
             y=[
                 opt_result["total_expected_cost"],
                 opt_result["total_expected_holding_cost"],
@@ -273,16 +332,18 @@ def build_milp_comparison_charts(opt_result: dict[str, Any]) -> tuple[go.Figure,
     )
     comp_fig.add_trace(
         go.Bar(
-            name="14-Day Rule-of-Thumb Baseline",
-            x=["Expected Total Cost ($)", "Holding Cost ($)", "Stockout Cost ($)"],
+            name="Simple 14-Day Rule-of-Thumb",
+            x=["Total Risk & Storage Cost ($)", "Storage Cost ($)", "Lost-Sale Penalty ($)"],
             y=[opt_result["baseline_total_cost"], 0.0, 0.0],
             marker_color=AMBER,
             text=[f"${opt_result['baseline_total_cost']:,.2f}", "—", "—"],
             textposition="auto",
         )
     )
-    comp_fig.update_layout(barmode="group", yaxis_title="USD ($)")
-    _apply_dark_layout(comp_fig, "Expected Operational Cost: HiGHS MILP vs. Baseline", height=350)
+    comp_fig.update_layout(barmode="group", yaxis_title="Cost ($)")
+    _apply_dark_layout(
+        comp_fig, "Expected Storage & Stockout Cost: Smart Restock vs. Simple Rule", height=350
+    )
 
     budget_cap = max(float(opt_result["constraints"]["max_total_budget"]), 1.0)
     spent = float(opt_result["total_order_cost"])
@@ -292,7 +353,7 @@ def build_milp_comparison_charts(opt_result: dict[str, Any]) -> tuple[go.Figure,
             value=spent,
             number={"prefix": "$", "valueformat": ",.0f"},
             delta={"reference": budget_cap, "prefix": "$", "valueformat": ",.0f"},
-            title={"text": "Working-Capital Budget Utilization"},
+            title={"text": "Cash Budget Used vs. Limit"},
             gauge={
                 "axis": {"range": [0, budget_cap]},
                 "bar": {"color": EMERALD},

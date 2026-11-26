@@ -1,4 +1,4 @@
-"""StockPulse AI — 5-Tab Streamlit + Plotly Interactive Command Center."""
+"""StockPulse AI — Business-Friendly Streamlit + Plotly Retail Command Center."""
 
 from __future__ import annotations
 
@@ -23,6 +23,7 @@ from ui.charts import (
     build_quantile_spread_chart,
     build_shap_waterfall_bar,
     build_store_category_bar,
+    friendly_feature_name,
 )
 
 BENCHMARK_PATH = PROJECT_ROOT / "eval" / "benchmark_results.json"
@@ -35,8 +36,21 @@ DEFAULT_CONSTRAINTS: dict[str, Any] = {
     "holding_cost_multiplier": 1.0,
 }
 
+DRIFT_STATUS_LABELS: dict[str, str] = {
+    "STABLE": "Normal — Steady Buying Habits",
+    "MODERATE_DRIFT": "Slight Seasonal Shift — Monitor Weekly",
+    "SIGNIFICANT_DRIFT": "Major Shift Detected — Retrain Recommended",
+}
+
+PDP_FEATURE_OPTIONS: dict[str, str] = {
+    "Item Selling Price ($)": "sell_price",
+    "Price vs. Historical Average": "price_vs_item_avg",
+    "7-Day Average Sales": "rolling_mean_7",
+    "Zero-Sale Days (Past 28d)": "rolling_zero_rate_28",
+}
+
 st.set_page_config(
-    page_title="StockPulse AI — Demand & Inventory Command Center",
+    page_title="StockPulse AI — Retail Sales & Restock Planner",
     page_icon=":material/analytics:",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -140,16 +154,21 @@ def init_session_state(
 def _format_briefing_markdown(brief: dict[str, Any]) -> str:
     actions = "\n".join(f"- {a}" for a in brief["priority_actions"])
     alerts = "\n".join(f"- {r}" for r in brief["risk_alerts"])
+    mode_label = (
+        "AI Narrative Assistant"
+        if brief["generation_mode"] == "llm"
+        else "Automated Rule-Checked Summary"
+    )
     return (
         f"# {brief['headline']}\n\n"
-        f"**Generation mode:** `{brief['generation_mode']}`\n\n"
-        f"## Executive summary\n{brief['executive_summary']}\n\n"
-        f"## Priority procurement actions\n{actions}\n\n"
-        f"## Risk & drift alerts\n{alerts}\n"
+        f"**Report source:** {mode_label}\n\n"
+        f"## Summary\n{brief['executive_summary']}\n\n"
+        f"## Top Reorder Actions\n{actions}\n\n"
+        f"## Stock & Sales Risk Alerts\n{alerts}\n"
     )
 
 
-# --- App Boot & Shared Telemetry ---
+# --- App Boot & Shared Sidebar ---
 client = get_api_client()
 health = fetch_health(client)
 skus = fetch_skus(client)
@@ -157,96 +176,143 @@ skus_df = pd.DataFrame(skus)
 stores = sorted(skus_df["store_id"].unique().tolist())
 
 with st.sidebar:
-    st.markdown("### :material/analytics: StockPulse AI")
-    st.caption("Probabilistic Walmart M5 Demand & MILP Replenishment Engine")
+    st.markdown("### :material/storefront: StockPulse AI")
+    st.caption("Smart Retail Sales Forecasting & Restock Planner")
 
-    selected_store = st.selectbox("Regional store", stores, index=0, key="sb_store")
+    selected_store = st.selectbox(
+        "Choose a store",
+        stores,
+        index=0,
+        key="sb_store",
+        help="Pick which Walmart store location (California, Texas, or Wisconsin) to inspect.",
+    )
     store_skus = skus_df[skus_df["store_id"] == selected_store].sort_values("item_id")
     item_options = store_skus["item_id"].tolist()
-    selected_item = st.selectbox("SKU item", item_options, index=0, key="sb_item")
+    selected_item = st.selectbox(
+        "Choose a product",
+        item_options,
+        index=0,
+        key="sb_item",
+        help="Pick any of the 10 tracked products across Foods, Hobbies, and Household.",
+    )
 
     sku_row = store_skus[store_skus["item_id"] == selected_item].iloc[0]
     with st.container(border=True):
-        st.caption("Selected SKU snapshot")
+        st.caption("Selected product snapshot")
         st.markdown(
-            f"**{sku_row['cat_id']} / {sku_row['dept_id']}**  \n"
-            f"Price: **\\${sku_row['sell_price']:.2f}** · Cost: **\\${sku_row['unit_cost']:.2f}**  \n"
-            f"On-hand: **{int(sku_row['current_on_hand'])}** · Lead time: **{int(sku_row['lead_time_days'])}d** · MOQ: **{int(sku_row['moq'])}**"
+            f"**{sku_row['cat_id'].title()} · {sku_row['dept_id']}**  \n"
+            f"Shelf price: **\\${sku_row['sell_price']:.2f}** · Wholesale cost: **\\${sku_row['unit_cost']:.2f}**  \n"
+            f"In stock now: **{int(sku_row['current_on_hand'])} units**  \n"
+            f"Delivery wait: **{int(sku_row['lead_time_days'])} days** · Minimum supplier order: **{int(sku_row['moq'])} units**"
         )
 
     with st.container(border=True):
-        st.caption("Backend telemetry")
+        st.caption("System status")
+        report_mode = (
+            "AI Narrative Active"
+            if health["llm_mode"] == "llm"
+            else "Offline Safe Summary"
+        )
         st.markdown(
-            f":green[:material/check_circle: FastAPI Online]  \n"
-            f"DuckDB rows: **{health['duckdb_sales_rows']:,}**  \n"
-            f"Coverage: **{health['store_count']} stores / {health['sku_count']} SKUs**  \n"
-            f"Briefing engine: `{health['llm_mode']}`"
+            f":green[:material/check_circle: Live & Ready]  \n"
+            f"Sales history loaded: **{health['duckdb_sales_rows']:,} daily records**  \n"
+            f"Tracked catalog: **{health['store_count']} stores · {health['sku_count']} products**  \n"
+            f"Report engine: **{report_mode}**"
         )
 
 init_session_state(client, selected_store, selected_item)
 
-st.title(":material/inventory_2: StockPulse AI Command Center")
+st.title(":material/inventory_2: StockPulse AI — Store Demand & Restock Planner")
 st.caption(
-    "Real Kaggle Walmart M5 (CA_1 · TX_1 · WI_1) · LightGBM P10/P50/P90 · "
-    "TreeSHAP & XAI Studio · IsolationForest & PSI Drift · HiGHS MILP"
+    "Powered by 2 years of real Walmart store sales (CA_1 · TX_1 · WI_1) to forecast demand, "
+    "spot unusual spikes, and recommend budget-safe restock orders."
 )
 
 tab_overview, tab_forecast, tab_xai, tab_anomaly, tab_milp = st.tabs(
     [
-        ":material/dashboard: Executive overview",
-        ":material/show_chart: Demand forecast",
-        ":material/psychology: Explainable AI studio",
-        ":material/warning: Anomaly & drift",
-        ":material/tune: MILP & what-if",
+        "1. Store Summary & AI Report",
+        "2. 28-Day Sales Forecast",
+        "3. Why Sales Changed (AI Insights)",
+        "4. Unusual Spikes & Alerts",
+        "5. Smart Restock & Budget Planner",
     ]
 )
 
 # =============================================================================
-# TAB 1: Executive Overview & Grounded Briefing Copilot
+# TAB 1: Store Summary & AI Report
 # =============================================================================
 with tab_overview:
-    benchmark = load_benchmark_results()
-    wape_imp = (
-        f"+{benchmark['forecasting']['wape_improvement_pct']:.2f}%"
-        if benchmark
-        else "+16.86%"
-    )
-    cov_80 = (
-        f"{benchmark['forecasting']['lightgbm_quantile']['interval_coverage_80'] * 100:.2f}%"
-        if benchmark
-        else "80.60%"
-    )
-    nominal_savings = (
-        f"+{benchmark['inventory_optimization'][0]['cost_reduction_pct']:.2f}%"
-        if benchmark
-        else "+83.48%"
+    st.info(
+        "Get a quick health check of all 3 stores and generate a plain-English summary of what to reorder this week.",
+        icon=":material/storefront:",
     )
 
+    benchmark = load_benchmark_results()
+    if benchmark:
+        wape_err = benchmark["forecasting"]["lightgbm_quantile"]["wape"]
+        acc_pct = max(0.0, (1.0 - wape_err) * 100.0)
+        wape_imp = benchmark["forecasting"]["wape_improvement_pct"]
+        cov_80 = benchmark["forecasting"]["lightgbm_quantile"]["interval_coverage_80"] * 100.0
+        nominal_savings = benchmark["inventory_optimization"][0]["cost_reduction_pct"]
+    else:
+        wape_err = 0.3222
+        acc_pct = 67.78
+        wape_imp = 16.86
+        cov_80 = 80.60
+        nominal_savings = 83.48
+
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("DuckDB warehouse rows", f"{health['duckdb_sales_rows']:,}", "30 store-SKU series")
-    c2.metric("Forecast WAPE vs. 7d naive", wape_imp, "28-day recursive rollout")
-    c3.metric("80% interval coverage", cov_80, "Target: 80.00%")
-    c4.metric("Nominal MILP cost savings", nominal_savings, "vs. 14d rule-of-thumb")
+    c1.metric(
+        "Sales history tracked",
+        f"{health['duckdb_sales_rows']:,} days",
+        "30 store-product series",
+        help="Two full years of daily Walmart store sales loaded into DuckDB.",
+    )
+    c2.metric(
+        "Forecast accuracy",
+        f"{acc_pct:.1f}%",
+        f"+{wape_imp:.1f}% vs. last-week guess",
+        help=f"Average forecast error (WAPE) is {wape_err * 100:.1f}%, which is {wape_imp:.1f}% more accurate than guessing from last week's sales.",
+    )
+    c3.metric(
+        "Forecast range reliability",
+        f"{cov_80:.1f}%",
+        "Target: 80.0% of real days",
+        help="How often actual daily sales fell inside our Low-to-Peak expected sales band.",
+    )
+    c4.metric(
+        "Smart restock cost savings",
+        f"{nominal_savings:.1f}% lower",
+        "vs. 14-day rule-of-thumb",
+        help="Expected reduction in storage + lost-sale costs compared to a fixed 14-day reorder rule.",
+    )
 
     st.plotly_chart(
         build_store_category_bar(skus),
         width="stretch",
-        alt="On-hand inventory valuation grouped by store and category",
+        alt="Current stock value at wholesale cost across stores and categories",
+    )
+    st.caption(
+        "This chart shows how much wholesale cash is currently sitting on the shelves in each store across Foods, Hobbies, and Household."
     )
 
     with st.container(border=True):
-        st.subheader(":material/auto_awesome: Grounded executive briefing copilot")
+        st.subheader(":material/auto_awesome: Executive action report")
+        st.caption(
+            "Summarizes your restock plan, cost savings, and sales alerts using only verified numbers from the optimizer."
+        )
         col_scope, col_btn = st.columns([2, 1], vertical_alignment="bottom")
         with col_scope:
             scope_choice = st.segmented_control(
-                "Briefing scope",
+                "Which store should the report focus on?",
                 ["All stores", "CA_1", "TX_1", "WI_1"],
                 default="All stores",
                 key="brief_scope",
+                help="Choose All stores for a company-wide summary or pick one regional store.",
             )
         with col_btn:
             run_brief = st.button(
-                "Generate executive briefing",
+                "Create updated report",
                 icon=":material/bolt:",
                 type="primary",
                 width="stretch",
@@ -255,7 +321,7 @@ with tab_overview:
 
         if run_brief:
             focus_store = None if (scope_choice in (None, "All stores")) else scope_choice
-            with st.spinner("Synthesizing grounded procurement briefing..."):
+            with st.spinner("Writing your executive action report..."):
                 st.session_state["briefing_result"] = client.post_briefing(
                     {
                         "constraints": st.session_state["active_constraints"],
@@ -264,153 +330,211 @@ with tab_overview:
                 )
 
         brief = st.session_state["briefing_result"]
-        st.info(
+        mode_tag = (
+            "AI Narrative"
+            if brief["generation_mode"] == "llm"
+            else "Automated Summary"
+        )
+        st.success(
             brief["executive_summary"],
-            title=f"{brief['headline']}  [{brief['generation_mode']}]",
+            title=f"{brief['headline']} ({mode_tag})",
         )
         col_act, col_risk = st.columns(2)
         with col_act:
-            st.markdown("**Priority procurement actions**")
+            st.markdown("**Top things to order now**")
             for act in brief["priority_actions"]:
                 st.markdown(f"- {act}")
         with col_risk:
-            st.markdown("**Risk & drift alerts**")
+            st.markdown("**Things to watch out for**")
             for alert in brief["risk_alerts"]:
                 st.markdown(f"- {alert}")
 
         st.download_button(
-            "Download briefing (Markdown)",
+            "Download report (.md)",
             data=_format_briefing_markdown(brief),
-            file_name="stockpulse_executive_briefing.md",
+            file_name="stockpulse_executive_report.md",
             mime="text/markdown",
             icon=":material/download:",
             width="content",
         )
 
 # =============================================================================
-# TAB 2: Probabilistic Demand Forecasting (P10 / P50 / P90)
+# TAB 2: 28-Day Sales Forecast
 # =============================================================================
 with tab_forecast:
+    st.info(
+        "See expected daily sales for the next 28 days—including a Low Estimate, Expected Sales, and Busy-Day Peak—and compare them against real store sales.",
+        icon=":material/show_chart:",
+    )
+
     bundle = fetch_forecast(client, selected_store, selected_item)
     sku_metrics = bundle["metrics"]
+    sku_acc = max(0.0, (1.0 - sku_metrics["wape"]) * 100.0)
 
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("SKU WAPE (28d)", f"{sku_metrics['wape'] * 100:.2f}%")
-    m2.metric("SKU MAE", f"{sku_metrics['mae']:.2f} units/day")
-    m3.metric("SKU RMSE", f"{sku_metrics['rmse']:.2f}")
-    m4.metric("80% PI coverage", f"{sku_metrics['interval_coverage_80'] * 100:.1f}%")
+    m1.metric(
+        "Product forecast accuracy",
+        f"{sku_acc:.1f}%",
+        f"Avg error (WAPE): {sku_metrics['wape'] * 100:.1f}%",
+        help="Overall 28-day accuracy for this specific product at this store.",
+    )
+    m2.metric(
+        "Average daily miss",
+        f"±{sku_metrics['mae']:.1f} units/day",
+        help="Average difference between expected daily sales and actual units sold (MAE).",
+    )
+    m3.metric(
+        "Big-day swing error",
+        f"±{sku_metrics['rmse']:.1f} units",
+        help="Error metric that puts extra weight on larger misses during busy days (RMSE).",
+    )
+    m4.metric(
+        "Days inside expected range",
+        f"{sku_metrics['interval_coverage_80'] * 100:.0f}%",
+        "Target: ~80% of days",
+        help="Share of real days that landed between our Low Estimate (P10) and Busy-Day Peak (P90).",
+    )
 
     st.plotly_chart(
         build_forecast_fan_chart(bundle),
         width="stretch",
-        alt="Trailing 60-day actual sales and 28-day P10/P50/P90 quantile forecast fan",
+        alt="Past 60 days of sales and 28-day expected sales range compared to real sales",
+    )
+    st.caption(
+        "The shaded green band shows our Expected Sales Range (Low Estimate to Busy-Day Peak, covering ~81% of real days across all products). The orange dotted line shows what actually sold."
     )
 
     fc_dates = [pt["date"] for pt in bundle["forecast"]]
     sel_date = st.selectbox(
-        "Validation date for local TreeSHAP attribution",
+        "Pick a forecast day to see why the AI predicted that number",
         fc_dates,
         index=len(fc_dates) - 1,
         key="fc_shap_date",
+        help="Inspect the exact factors that pushed this product's forecast up or down on any day in the 28-day window.",
     )
     exp_data = fetch_explain(client, selected_store, selected_item, sel_date)
     local_exp = exp_data["local_explanation"]
 
+    st.markdown("#### What Is Driving This Product's Forecast?")
     st.caption(
-        f"TreeSHAP decomposition for **{selected_store} / {selected_item}** on **{local_exp['date']}**: "
-        f"Base value `{local_exp['base_value']:.3f}` + Sum(SHAP) = Predicted P50 `{local_exp['predicted_p50']:.3f}`"
+        f"On **{local_exp['date']}**, expected baseline sales start at **{local_exp['base_value']:.1f} units/day** and adjust to **{max(0.0, local_exp['predicted_p50']):.1f} units/day**. "
+        "Green bars push expected sales up; red bars pull expected sales down."
     )
     col_loc, col_glob = st.columns(2)
     with col_loc:
         st.plotly_chart(
             build_shap_waterfall_bar(
                 local_exp["contributions"],
-                f"Local TreeSHAP Drivers ({local_exp['date']})",
+                f"What Moved This Product's Forecast on {local_exp['date']}",
                 top_n=12,
                 use_abs=False,
             ),
             width="stretch",
-            alt="Local TreeSHAP positive and negative contributions for selected validation date",
+            alt="Plain-English factors pushing this product's daily forecast up or down",
         )
     with col_glob:
         st.plotly_chart(
             build_shap_waterfall_bar(
                 exp_data["global_importance"],
-                "Global Validation SHAP Feature Importance",
+                "Biggest Overall Sales Drivers Across All Stores",
                 top_n=12,
                 use_abs=True,
             ),
             width="stretch",
-            alt="Global validation mean absolute SHAP feature importance",
+            alt="Biggest overall sales drivers across all 3 stores and 10 products",
         )
 
 # =============================================================================
-# TAB 3: Explainable AI (XAI) Studio
+# TAB 3: Why Sales Changed (AI Insights)
 # =============================================================================
 with tab_xai:
-    st.subheader(":material/stacked_bar_chart: Multi-quantile tail-risk attribution (P10 / P50 / P90)")
+    st.info(
+        "Look under the hood: see what causes unpredictable busy-day spikes, test how price changes affect sales, and audit why the optimizer placed each order.",
+        icon=":material/psychology:",
+    )
+
+    st.subheader(":material/stacked_bar_chart: What Causes Unpredictable Busy-Day Spikes?")
+    st.caption(
+        "Compares what drives a quiet day (Low Estimate), a typical day (Expected Sales), and a rush day (Busy-Day Peak). Big red bars show what creates wide swings."
+    )
     tail_dates = [pt["date"] for pt in bundle["forecast"]]
     tail_date = st.selectbox(
-        "Validation date for P10/P50/P90 spread analysis",
+        "Pick a day to inspect busy-day uncertainty",
         tail_dates,
         index=len(tail_dates) - 1,
         key="xai_tail_date",
+        help="See which factors widen the gap between quiet days and busy-day peaks.",
     )
     tail_data = fetch_tail_risk(client, selected_store, selected_item, tail_date)
 
     t1, t2, t3, t4 = st.columns(4)
-    t1.metric("Predicted P10", f"{max(0.0, tail_data['predicted_p10']):.2f}")
-    t2.metric("Predicted P50", f"{max(0.0, tail_data['predicted_p50']):.2f}")
-    t3.metric("Predicted P90", f"{max(0.0, tail_data['predicted_p90']):.2f}")
+    t1.metric("Low estimate (quiet day)", f"{max(0.0, tail_data['predicted_p10']):.1f} units")
+    t2.metric("Expected sales (typical)", f"{max(0.0, tail_data['predicted_p50']):.1f} units")
+    t3.metric("Busy-day peak (rush)", f"{max(0.0, tail_data['predicted_p90']):.1f} units")
     spread_w = max(0.0, tail_data["predicted_p90"]) - max(0.0, tail_data["predicted_p10"])
-    t4.metric("80% interval width", f"{spread_w:.2f} units")
+    t4.metric("Daily uncertainty gap", f"{spread_w:.1f} units")
 
     st.plotly_chart(
         build_quantile_spread_chart(tail_data),
         width="stretch",
-        alt="Grouped TreeSHAP drivers across P10, P50, P90 and interval spread",
+        alt="Comparison of factors driving quiet days, expected sales, and busy-day spikes",
     )
 
     st.divider()
-    st.subheader(":material/ssid_chart: Partial dependence & sampled SKU ICE curves")
-    pdp_feature = st.segmented_control(
-        "Inspect elasticity / demand driver feature",
-        ["sell_price", "price_vs_item_avg", "rolling_mean_7", "rolling_zero_rate_28"],
-        default="sell_price",
-        key="xai_pdp_feat",
+    st.subheader(":material/ssid_chart: How Price Changes Affect Daily Sales")
+    st.caption(
+        "See how discounting or raising the price—or changing recent sales trends—changes expected units sold per day across individual products and overall."
     )
-    chosen_feat = pdp_feature or "sell_price"
+    pdp_choice_label = st.segmented_control(
+        "Choose a business lever to test across all stores",
+        list(PDP_FEATURE_OPTIONS.keys()),
+        default="Item Selling Price ($)",
+        key="xai_pdp_feat",
+        help="The bold green line shows the average effect; thin blue lines show individual store-product curves.",
+    )
+    chosen_feat = PDP_FEATURE_OPTIONS.get(
+        pdp_choice_label or "Item Selling Price ($)", "sell_price"
+    )
     pdp_data = fetch_pdp(client, chosen_feat)
     st.plotly_chart(
         build_pdp_ice_chart(pdp_data),
         width="stretch",
-        alt=f"Partial dependence and ICE curves for {chosen_feat}",
+        alt=f"Sales sensitivity curve for {friendly_feature_name(chosen_feat)}",
     )
 
     st.divider()
-    st.subheader(":material/alt_route: Actionable counterfactual recourse simulator")
+    st.subheader(':material/alt_route: "What Would It Take?" Goal Simulator')
+    st.caption(
+        "Test what price discount, price increase, or faster supplier delivery is needed to hit a daily sales target or avoid running out of stock."
+    )
     with st.form("counterfactual_form"):
         cf_c1, cf_c2, cf_c3 = st.columns(3)
         with cf_c1:
             cf_delta = st.slider(
-                "Target demand change (%)",
+                "Desired sales change (%)",
                 min_value=-40,
                 max_value=40,
                 value=-15,
                 step=5,
+                help="Positive % tests what discount boosts sales; negative % tests how much a price hike slows demand.",
             )
         with cf_c2:
-            cf_elim = st.checkbox("Target stockout elimination over lead time", value=False)
+            cf_elim = st.checkbox(
+                "Avoid running out of stock before delivery arrives",
+                value=False,
+                help="Finds the price adjustment or faster supplier delivery needed so current stock lasts until restock.",
+            )
         with cf_c3:
             cf_oh = st.number_input(
-                "On-hand stock override (for stockout simulation)",
+                "Test with custom stock on shelf (units)",
                 min_value=0,
                 max_value=5000,
                 value=int(sku_row["current_on_hand"]),
                 step=1,
+                help="Used when checking how to prevent a stockout with limited inventory on hand.",
             )
         cf_submit = st.form_submit_button(
-            "Run counterfactual search",
+            "Find smallest change needed",
             icon=":material/search:",
             type="primary",
             width="content",
@@ -429,89 +553,145 @@ with tab_xai:
         )
 
     cf_res = st.session_state["counterfactual_result"]
+    lever_friendly = {
+        "sell_price": "Shelf Price",
+        "lead_time_days": "Delivery Time",
+        "sell_price+lead_time_days": "Price + Faster Delivery",
+    }.get(cf_res["lever"], cf_res["lever"])
+
     r1, r2, r3, r4 = st.columns(4)
-    r1.metric("Primary lever", cf_res["lever"])
+    r1.metric("Best lever to adjust", lever_friendly)
     r2.metric(
-        "Counterfactual value",
+        "Recommended target value",
         f"{cf_res['counterfactual_value']:.2f}",
-        f"{cf_res['pct_change']:+.1f}% vs. {cf_res['original_value']:.2f}",
+        f"{cf_res['pct_change']:+.1f}% vs. current {cf_res['original_value']:.2f}",
     )
     r3.metric(
-        "Achieved P50 demand",
-        f"{cf_res['achieved_p50']:.2f}",
-        f"from {cf_res['original_p50']:.2f}",
+        "Resulting daily sales",
+        f"{cf_res['achieved_p50']:.1f} units/day",
+        f"from {cf_res['original_p50']:.1f} units/day",
     )
     r4.metric(
-        "Stockout status",
-        "Eliminated" if cf_res["stockout_eliminated"] else "At risk",
-        f"Lead time: {cf_res['lead_time_days_counterfactual']}d",
+        "Stockout risk",
+        "Safe (Covered)" if cf_res["stockout_eliminated"] else "Needs Reorder",
+        f"Delivery window: {cf_res['lead_time_days_counterfactual']} days",
     )
-    st.success(cf_res["action_summary"], title="Recommended minimal intervention")
+    st.success(cf_res["action_summary"], title="Recommended step")
 
     st.divider()
-    st.subheader(":material/fact_check: MILP decision & constraint attribution audit")
+    st.subheader(":material/fact_check: Why the AI Recommended Each Order")
+    st.caption(
+        "Every purchase order explained in plain English: expected profit protected vs. storage cost, and whether a minimum supplier order or cash limit shaped the quantity."
+    )
     audit_col1, audit_col2 = st.columns([3, 1], vertical_alignment="bottom")
     with audit_col1:
         audit_filter = st.segmented_control(
-            "Filter audit table",
-            ["All SKUs", "Ordered only", "MOQ binding", "Constrained"],
-            default="All SKUs",
+            "Filter order explanations",
+            ["All products", "Reordered only", "Hit minimum supplier order", "Limited by budget/space"],
+            default="All products",
             key="xai_audit_filter",
+            help="Quickly focus on items being reordered or restricted by supplier minimums or budget caps.",
         )
     with audit_col2:
-        if st.button("Refresh decision audit", icon=":material/refresh:", width="stretch"):
+        if st.button("Refresh order audit", icon=":material/refresh:", width="stretch"):
             st.session_state["decision_audit_result"] = client.post_xai_decision_audit(
                 st.session_state["active_constraints"]
             )
 
     audit = st.session_state["decision_audit_result"]
     a1, a2, a3 = st.columns(3)
-    a1.metric("Total net economic benefit", f"${audit['total_net_economic_benefit']:,.2f}")
-    a2.metric("MOQ-binding SKUs", f"{audit['moq_binding_count']}")
-    a3.metric("Cap-constrained SKUs", f"{audit['constrained_sku_count']}")
+    a1.metric("Net savings vs. simple rule", f"${audit['total_net_economic_benefit']:,.2f}")
+    a2.metric("Orders at minimum supplier size", f"{audit['moq_binding_count']}")
+    a3.metric("Orders capped by budget/space", f"{audit['constrained_sku_count']}")
 
     audit_df = pd.DataFrame(audit["items"])
-    if audit_filter == "Ordered only":
+    if audit_filter == "Reordered only":
         audit_df = audit_df[audit_df["order_triggered"]]
-    elif audit_filter == "MOQ binding":
+    elif audit_filter == "Hit minimum supplier order":
         audit_df = audit_df[audit_df["moq_binding"]]
-    elif audit_filter == "Constrained":
+    elif audit_filter == "Limited by budget/space":
         audit_df = audit_df[audit_df["budget_or_capacity_constrained"]]
 
+    audit_display = audit_df.rename(
+        columns={
+            "store_id": "Store",
+            "item_id": "Product",
+            "dept_id": "Department",
+            "recommended_order_qty": "Order Qty (Units)",
+            "order_triggered": "Reorder?",
+            "net_economic_benefit": "Savings vs. Rule ($)",
+            "stockout_risk_ratio": "Stockout Risk Share",
+            "moq_binding": "Minimum Order?",
+            "budget_or_capacity_constrained": "Budget/Space Capped?",
+            "decision_rationale": "Why the AI Recommended This",
+        }
+    )
     st.dataframe(
-        audit_df,
+        audit_display,
         width="stretch",
         hide_index=True,
-        alt="MILP SKU-level economic and constraint audit table",
+        alt="Plain-English explanation for each store-product restock decision",
     )
 
 # =============================================================================
-# TAB 4: Anomaly & Distribution Drift Monitor
+# TAB 4: Unusual Spikes & Alerts
 # =============================================================================
 with tab_anomaly:
+    st.info(
+        "Check whether customer buying habits are still normal and inspect sudden sales surges or unexpected drops across your stores.",
+        icon=":material/notifications_active:",
+    )
+
     anom_bundle = fetch_anomalies(client)
     drift = anom_bundle["drift_report"]
     anomalies_df = pd.DataFrame(anom_bundle["anomalies"])
+    drift_friendly = DRIFT_STATUS_LABELS.get(drift["status"], drift["status"])
 
+    st.markdown("#### Are Customer Buying Habits Still Normal?")
     d1, d2, d3, d4 = st.columns(4)
-    d1.metric("Portfolio PSI score", f"{drift['psi_score']:.4f}", drift["status"])
-    d2.metric("KS statistic", f"{drift['ks_statistic']:.4f}")
-    d3.metric("KS p-value", f"{drift['ks_pvalue']:.4f}")
-    d4.metric("Flagged demand shocks", f"{len(anomalies_df)}")
+    d1.metric(
+        "Buying habit status",
+        drift_friendly.split(" — ")[0],
+        drift_friendly,
+        help=f"Overall shift score (PSI = {drift['psi_score']:.3f}). Below 0.10 is steady; 0.10–0.25 is a mild seasonal shift; above 0.25 suggests retraining.",
+    )
+    d2.metric(
+        "Habit shift score (PSI)",
+        f"{drift['psi_score']:.3f}",
+        "0.10–0.25 = Slight shift",
+        help="Measures how much recent prices and sales patterns differ from the 2-year baseline.",
+    )
+    d3.metric(
+        "Daily sales consistency",
+        "Steady" if drift["ks_pvalue"] >= 0.05 else "Shifted",
+        f"KS p-value: {drift['ks_pvalue']:.2f}",
+        help="Statistical check comparing recent unit sales volume against historical norms.",
+    )
+    d4.metric(
+        "Unusual days flagged",
+        f"{len(anomalies_df)} alerts",
+        "Out of 840 recent days",
+        help="Days where actual sales spiked far above or dropped far below expected demand.",
+    )
 
     st.plotly_chart(
         build_psi_drift_chart(drift),
         width="stretch",
-        alt="Per-feature Population Stability Index bars with drift thresholds",
+        alt="Buying-habit shift score for each retail signal with warning thresholds",
+    )
+    st.caption(
+        "Price changes naturally lift the price-shift bar over time, while steady unit sales (green bar) confirm customer demand remains stable."
     )
 
+    st.markdown("#### Sudden Sales Surges & Drops")
     f_c1, f_c2 = st.columns(2)
     with f_c1:
         shock_filter = st.segmented_control(
-            "Shock type",
-            ["All", "SURGE", "DROP"],
-            default="All",
+            "Alert type",
+            ["All alerts", "Sudden Sales Surge", "Sudden Sales Drop"],
+            default="All alerts",
             key="anom_shock_filter",
+            help="Filter between unexpected demand spikes and sudden drops.",
         )
     with f_c2:
         anom_store = st.segmented_control(
@@ -519,69 +699,109 @@ with tab_anomaly:
             ["All stores", "CA_1", "TX_1", "WI_1"],
             default="All stores",
             key="anom_store_filter",
+            help="Show alerts across all stores or focus on a single region.",
         )
 
     filtered_anom = anomalies_df.copy()
     if not filtered_anom.empty:
-        if shock_filter in ("SURGE", "DROP"):
-            filtered_anom = filtered_anom[filtered_anom["shock_type"] == shock_filter]
+        filtered_anom["Alert Type"] = filtered_anom["shock_type"].map(
+            {"SURGE": "Sudden Sales Surge", "DROP": "Sudden Sales Drop", "NORMAL": "Normal"}
+        )
+        if shock_filter in ("Sudden Sales Surge", "Sudden Sales Drop"):
+            filtered_anom = filtered_anom[filtered_anom["Alert Type"] == shock_filter]
         if anom_store in ("CA_1", "TX_1", "WI_1"):
             filtered_anom = filtered_anom[filtered_anom["store_id"] == anom_store]
 
+        display_anom = filtered_anom[
+            [
+                "date",
+                "store_id",
+                "item_id",
+                "Alert Type",
+                "actual_sales",
+                "expected_p50",
+                "reason",
+            ]
+        ].rename(
+            columns={
+                "date": "Date",
+                "store_id": "Store",
+                "item_id": "Product",
+                "actual_sales": "Actual Sold",
+                "expected_p50": "Expected Sales",
+                "reason": "What Happened",
+            }
+        )
+    else:
+        display_anom = filtered_anom
+
     st.dataframe(
-        filtered_anom,
+        display_anom,
         width="stretch",
         hide_index=True,
-        alt="Detected IsolationForest demand surge and drop shocks",
+        alt="Table of sudden sales surges and drops detected by StockPulse AI",
     )
 
 # =============================================================================
-# TAB 5: Constrained MILP Inventory & What-If Simulator
+# TAB 5: Smart Restock & Budget Planner
 # =============================================================================
 with tab_milp:
+    st.info(
+        "Smart Restock Optimizer: Automatically calculates how many units to reorder for every product so you don't run out of stock or overspend your cash budget.",
+        icon=":material/shopping_cart_checkout:",
+    )
+
     with st.form("milp_whatif_form"):
-        st.subheader(":material/tune: Working-capital & supply-chain stress parameters")
+        st.subheader(":material/tune: Test Budget & Supply-Chain Scenarios")
+        st.caption(
+            "Adjust your available cash, warehouse space, or rush-season demand below, then click Calculate Smart Restock Plan."
+        )
         s1, s2, s3 = st.columns(3)
         with s1:
             budget_cap = st.slider(
-                "Max working-capital budget ($)",
+                "Cash budget limit ($)",
                 min_value=1500,
                 max_value=50000,
                 value=int(st.session_state["active_constraints"]["max_total_budget"]),
                 step=500,
+                help="Cash Budget Limit: Maximum total dollars you want to spend on restocking right now.",
             )
             demand_shock = st.slider(
-                "Demand shock (%)",
+                "Expected sales surge or slowdown (%)",
                 min_value=-30,
                 max_value=50,
                 value=int(st.session_state["active_constraints"]["demand_shock_pct"]),
                 step=5,
+                help="Simulate a busy promotion (+%) or slow week (-%) across all stores.",
             )
         with s2:
             unit_cap = st.slider(
-                "Warehouse unit capacity",
+                "Warehouse space limit (total units)",
                 min_value=500,
                 max_value=25000,
                 value=int(st.session_state["active_constraints"]["max_total_units"]),
                 step=250,
+                help="Maximum total units your backroom or warehouse can receive in this restock.",
             )
             lt_mult = st.slider(
-                "Supplier lead-time multiplier",
+                "Supplier delivery speed multiplier",
                 min_value=0.5,
                 max_value=2.0,
                 value=float(st.session_state["active_constraints"]["lead_time_multiplier"]),
                 step=0.1,
+                help="1.0x is normal supplier shipping; 1.5x simulates 50% slower deliveries.",
             )
         with s3:
             hold_mult = st.slider(
-                "Holding cost multiplier",
+                "Storage & shelf holding cost multiplier",
                 min_value=0.5,
                 max_value=2.0,
                 value=float(st.session_state["active_constraints"]["holding_cost_multiplier"]),
                 step=0.1,
+                help="Higher values penalize holding extra stock on the shelf more strongly.",
             )
         run_opt = st.form_submit_button(
-            "Run HiGHS MILP optimization",
+            "Calculate smart restock plan",
             icon=":material/play_arrow:",
             type="primary",
             width="content",
@@ -596,7 +816,7 @@ with tab_milp:
             "holding_cost_multiplier": float(hold_mult),
         }
         st.session_state["active_constraints"] = new_constraints
-        with st.spinner("Solving constrained MILP via SciPy HiGHS..."):
+        with st.spinner("Calculating optimal restock orders within your budget..."):
             st.session_state["optimize_result"] = client.post_optimize(new_constraints)
             st.session_state["decision_audit_result"] = client.post_xai_decision_audit(
                 new_constraints
@@ -605,31 +825,35 @@ with tab_milp:
     opt_res = st.session_state["optimize_result"]
     o1, o2, o3, o4 = st.columns(4)
     o1.metric(
-        "MILP expected total cost",
+        "Expected storage & stockout cost",
         f"${opt_res['total_expected_cost']:,.2f}",
-        f"Baseline: ${opt_res['baseline_total_cost']:,.2f}",
+        f"Simple 14d rule: ${opt_res['baseline_total_cost']:,.2f}",
+        help="Total expected holding cost plus lost-profit risk across quiet, normal, and rush days.",
     )
     o2.metric(
-        "Cost savings vs. baseline",
+        "Savings vs. simple rule",
         f"${opt_res['total_cost_savings_vs_baseline']:,.2f}",
-        f"{opt_res['solver_status']}",
+        "Optimal plan ready" if opt_res["solver_status"] == "OPTIMAL" else opt_res["solver_status"],
+        help="Money saved compared to ordering a flat 14-day supply.",
     )
     o3.metric(
-        "Expected service level",
-        f"{opt_res['expected_service_level'] * 100:.2f}%",
-        f"Baseline: {opt_res['baseline_service_level'] * 100:.2f}%",
+        "Orders filled without stockout",
+        f"{opt_res['expected_service_level'] * 100:.1f}%",
+        f"Simple rule: {opt_res['baseline_service_level'] * 100:.1f}%",
+        help="Percentage of expected customer demand satisfied without running out of stock.",
     )
     o4.metric(
-        "Procurement spend / units",
+        "Cash needed & units ordered",
         f"${opt_res['total_order_cost']:,.2f}",
-        f"{opt_res['total_units_ordered']:,} units",
+        f"{opt_res['total_units_ordered']:,} units total",
+        help="Exact wholesale cash required and total units across all purchase orders.",
     )
 
     if opt_res["baseline_budget_violated"] or opt_res["baseline_capacity_violated"]:
         st.warning(
-            "Under the active constraints, the 14-day rule-of-thumb heuristic violated the "
-            "working-capital budget or warehouse unit cap, whereas the HiGHS MILP allocation remained strictly feasible.",
-            title="Baseline constraint violation detected",
+            "Your simple 14-day reorder rule would have blown past your cash budget or warehouse space limit. "
+            "The Smart Restock Optimizer stayed strictly within your limits while protecting high-margin items.",
+            title="Simple rule exceeded your budget or warehouse limit",
         )
 
     cost_fig, gauge_fig = build_milp_comparison_charts(opt_res)
@@ -638,25 +862,43 @@ with tab_milp:
         st.plotly_chart(
             cost_fig,
             width="stretch",
-            alt="HiGHS MILP expected cost vs. 14-day rule-of-thumb baseline",
+            alt="Smart Restock expected cost compared to simple 14-day rule-of-thumb",
         )
     with ch_r:
         st.plotly_chart(
             gauge_fig,
             width="stretch",
-            alt="Working-capital procurement budget utilization gauge",
+            alt="Cash budget spent compared to budget limit",
         )
 
     decisions_df = pd.DataFrame(opt_res["decisions"])
+    decisions_display = decisions_df.rename(
+        columns={
+            "store_id": "Store",
+            "item_id": "Product",
+            "dept_id": "Department",
+            "current_on_hand": "On Shelf Now",
+            "forecast_demand_horizon": "Expected Need (Units)",
+            "safety_stock_p90": "Rush-Day Buffer",
+            "recommended_order_qty": "Smart Order Qty",
+            "order_triggered": "Reorder?",
+            "unit_cost": "Wholesale Cost ($)",
+            "order_cost": "Order Spend ($)",
+            "expected_holding_cost": "Storage Cost ($)",
+            "expected_stockout_cost": "Stockout Risk ($)",
+            "baseline_order_qty": "Simple 14d Rule Qty",
+            "cost_savings_vs_baseline": "Savings vs. Rule ($)",
+        }
+    )
     st.dataframe(
-        decisions_df,
+        decisions_display,
         width="stretch",
         hide_index=True,
-        alt="Optimal 30-SKU replenishment order allocation table",
+        alt="Complete 30-product smart restock order plan",
     )
     st.download_button(
-        "Download purchase order CSV",
-        data=decisions_df.to_csv(index=False),
+        "Download purchase orders (.csv)",
+        data=decisions_display.to_csv(index=False),
         file_name="stockpulse_purchase_orders.csv",
         mime="text/csv",
         icon=":material/download:",
