@@ -1,0 +1,35 @@
+# Python & virtual environments
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Environment secrets
+.env
+.env.local
+
+# Raw Walmart M5 CSVs (too large for Git; processed Parquet files ARE tracked)
+data/raw/*
+!data/raw/.gitkeep
+
+# Local DuckDB database files (rebuilt idempotently from tracked Parquet)
+*.duckdb
+*.duckdb.wal
+*.duckdb.tmp
+
+# Saved model/eval runtime outputs
+artifacts/
+models/*.pkl
+models/*.joblib
+models/*.txt
+logs/
+
+# OS & IDE files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

@@ -1,0 +1,130 @@
+{
+  "dataset": {
+    "stores": [
+      "CA_1",
+      "TX_1",
+      "WI_1"
+    ],
+    "sku_series": 30,
+    "train_rows": 20220,
+    "val_rows": 840,
+    "val_window": "2016-04-25 to 2016-05-22"
+  },
+  "forecasting": {
+    "seasonal_naive_7d": {
+      "wape": 0.387548,
+      "mae": 4.283333,
+      "rmse": 7.89394,
+      "pinball_p10": 0.884586,
+      "pinball_p50": 2.141667,
+      "pinball_p90": 1.04797,
+      "interval_coverage_80": 0.72381
+    },
+    "lightgbm_quantile": {
+      "wape": 0.322196,
+      "mae": 3.561032,
+      "rmse": 6.410864,
+      "pinball_p10": 0.688894,
+      "pinball_p50": 1.780516,
+      "pinball_p90": 0.980325,
+      "interval_coverage_80": 0.805952
+    },
+    "wape_improvement_pct": 16.86,
+    "category_wape_lightgbm": {
+      "FOODS": 0.229661,
+      "HOBBIES": 0.655403,
+      "HOUSEHOLD": 0.541121
+    },
+    "category_wape_naive": {
+      "FOODS": 0.305487,
+      "HOBBIES": 0.689692,
+      "HOUSEHOLD": 0.577446
+    }
+  },
+  "inventory_optimization": [
+    {
+      "scenario": "Nominal",
+      "constraints": {
+        "max_total_budget": 50000.0,
+        "max_total_units": 20000,
+        "lead_time_multiplier": 1.0,
+        "demand_shock_pct": 0.0,
+        "holding_cost_multiplier": 1.0
+      },
+      "solver_status": "OPTIMAL",
+      "milp_order_cost": 3966.6407,
+      "milp_units_ordered": 2289,
+      "milp_expected_cost": 46.9154,
+      "baseline_expected_cost": 283.9977,
+      "cost_savings": 237.0824,
+      "cost_reduction_pct": 83.48,
+      "milp_service_level": 0.999976,
+      "baseline_service_level": 0.957665,
+      "baseline_budget_violated": false,
+      "baseline_capacity_violated": false
+    },
+    {
+      "scenario": "+30% Demand Surge",
+      "constraints": {
+        "max_total_budget": 50000.0,
+        "max_total_units": 20000,
+        "lead_time_multiplier": 1.0,
+        "demand_shock_pct": 30.0,
+        "holding_cost_multiplier": 1.0
+      },
+      "solver_status": "OPTIMAL",
+      "milp_order_cost": 6141.9171,
+      "milp_units_ordered": 3703,
+      "milp_expected_cost": 62.3681,
+      "baseline_expected_cost": 538.2318,
+      "cost_savings": 475.8637,
+      "cost_reduction_pct": 88.41,
+      "milp_service_level": 0.999909,
+      "baseline_service_level": 0.915051,
+      "baseline_budget_violated": false,
+      "baseline_capacity_violated": false
+    },
+    {
+      "scenario": "+50% Lead-Time Delay",
+      "constraints": {
+        "max_total_budget": 50000.0,
+        "max_total_units": 20000,
+        "lead_time_multiplier": 1.5,
+        "demand_shock_pct": 0.0,
+        "holding_cost_multiplier": 1.0
+      },
+      "solver_status": "OPTIMAL",
+      "milp_order_cost": 5287.6501,
+      "milp_units_ordered": 3074,
+      "milp_expected_cost": 67.0807,
+      "baseline_expected_cost": 470.2084,
+      "cost_savings": 403.1277,
+      "cost_reduction_pct": 85.73,
+      "milp_service_level": 0.999944,
+      "baseline_service_level": 0.926119,
+      "baseline_budget_violated": false,
+      "baseline_capacity_violated": false
+    },
+    {
+      "scenario": "Tight Working-Capital Cap",
+      "constraints": {
+        "max_total_budget": 2000.0,
+        "max_total_units": 900,
+        "lead_time_multiplier": 1.0,
+        "demand_shock_pct": 0.0,
+        "holding_cost_multiplier": 1.0
+      },
+      "solver_status": "OPTIMAL",
+      "milp_order_cost": 1999.8903,
+      "milp_units_ordered": 851,
+      "milp_expected_cost": 274.2268,
+      "baseline_expected_cost": 283.9977,
+      "cost_savings": 9.771,
+      "cost_reduction_pct": 3.44,
+      "milp_service_level": 0.903433,
+      "baseline_service_level": 0.957665,
+      "baseline_budget_violated": true,
+      "baseline_capacity_violated": true
+    }
+  ]
+}
