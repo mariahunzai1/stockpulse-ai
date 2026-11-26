@@ -1,6 +1,5 @@
 # StockPulse AI — Probabilistic Demand Forecasting, XAI Studio & Constrained Inventory Optimization
 
-> **Portfolio Flagship Project 5** by **Maria Ali** ([`mariahunzai1`](https://github.com/mariahunzai1))  
 > **100% \$0 CPU-First Stack** · Real **Kaggle Walmart M5** Dataset (`CA_1`, `TX_1`, `WI_1`) · DuckDB · LightGBM P10/P50/P90 · TreeSHAP & XAI Studio · IsolationForest + PSI Drift · SciPy HiGHS MILP · FastAPI + Streamlit
 
 ---
